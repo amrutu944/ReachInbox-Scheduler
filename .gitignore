@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+logs/
+*.log
+.DS_Store
+test-dummy-leads.csv
+run-full-test.js
+
+*.tsbuildinfo
+
