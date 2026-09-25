@@ -7,6 +7,7 @@ import { ExpressAdapter } from "@bull-board/express";
 
 import { env } from "./config/env";
 import { emailQueue } from "./queue/emailQueue";
+import { redisConnection } from "./queue/redisConnection";
 import { recoverPendingEmailsOnBoot } from "./queue/recover";
 import { ensureIndex } from "./search/elasticClient";
 
@@ -91,8 +92,19 @@ app.use("/api/emails", emailRoutes);
 app.use("/api/slack", slackRoutes);
 
 async function main() {
-  await ensureIndex().catch((err) => console.error("Elasticsearch index setup failed (non-fatal):", err));
-  await recoverPendingEmailsOnBoot();
+  await ensureIndex().catch(() => {
+    console.log("[search] Elasticsearch offline (search index skipped, continuing with Postgres)");
+  });
+
+  try {
+    // Quick check if Redis is accessible before attempting recovery
+    const pingPromise = redisConnection.ping();
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 1500));
+    await Promise.race([pingPromise, timeoutPromise]);
+    await recoverPendingEmailsOnBoot();
+  } catch (err) {
+    console.warn(`[redis] Warning: Redis is not reachable at ${env.redisHost}:${env.redisPort}. Pending email recovery skipped. (Please start Redis)`);
+  }
 
   app.listen(env.port, () => {
     console.log(`ReachInbox scheduler API listening on http://localhost:${env.port}`);
