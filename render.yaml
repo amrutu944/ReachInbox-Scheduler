@@ -1,0 +1,66 @@
+# Render Blueprint - one web service (API + worker + built React app), Postgres, and Redis.
+# Deploy: https://dashboard.render.com/blueprints -> New Blueprint Instance -> pick this repo.
+services:
+  - type: web
+    name: reachinbox-scheduler
+    runtime: node
+    plan: free
+    buildCommand: >-
+      cd frontend && npm ci --include=dev && npm run build &&
+      cd ../backend && npm ci --include=dev && npm run build
+    startCommand: cd backend && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+      - key: RUN_WORKER_IN_API
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: reachinbox-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: reachinbox-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: WORKER_CONCURRENCY
+        value: "5"
+      - key: MIN_DELAY_BETWEEN_EMAILS_MS
+        value: "2000"
+      - key: MAX_EMAILS_PER_HOUR_PER_SENDER
+        value: "200"
+      - key: ELASTICSEARCH_INDEX
+        value: reachinbox-emails
+      # Filled in on the Render dashboard (secrets are never committed):
+      - key: FRONTEND_URL          # https://<your-service>.onrender.com
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID # same value as GOOGLE_CLIENT_ID, baked into the frontend build
+        sync: false
+      - key: ETHEREAL_SENDERS
+        sync: false
+      - key: SLACK_CLIENT_ID
+        sync: false
+      - key: SLACK_CLIENT_SECRET
+        sync: false
+      - key: SLACK_REDIRECT_URI    # https://<your-service>.onrender.com/api/slack/oauth/callback
+        sync: false
+      - key: ELASTICSEARCH_NODE    # optional; search is skipped if unreachable
+        sync: false
+
+  - type: keyvalue
+    name: reachinbox-redis
+    plan: free
+    maxmemoryPolicy: noeviction # required by BullMQ
+    ipAllowList: []
+
+databases:
+  - name: reachinbox-db
+    plan: free
+    databaseName: reachinbox

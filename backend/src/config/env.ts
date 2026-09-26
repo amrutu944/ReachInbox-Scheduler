@@ -30,6 +30,7 @@ export const env = {
 
   databaseUrl: required("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/reachinbox"),
 
+  redisUrl: process.env.REDIS_URL || undefined,
   redisHost: process.env.REDIS_HOST ?? "localhost",
   redisPort: parseInt(process.env.REDIS_PORT ?? "6379", 10),
   redisPassword: process.env.REDIS_PASSWORD || undefined,
@@ -45,6 +46,9 @@ export const env = {
 
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
   jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
+
+  // Run the BullMQ worker inside the API process (single-service deploys).
+  runWorkerInApi: process.env.RUN_WORKER_IN_API === "true",
 
   slackClientId: process.env.SLACK_CLIENT_ID ?? "",
   slackClientSecret: process.env.SLACK_CLIENT_SECRET ?? "",

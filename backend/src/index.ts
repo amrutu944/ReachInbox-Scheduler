@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -10,12 +12,18 @@ import { emailQueue } from "./queue/emailQueue";
 import { redisConnection } from "./queue/redisConnection";
 import { recoverPendingEmailsOnBoot } from "./queue/recover";
 import { ensureIndex } from "./search/elasticClient";
+import { pool } from "./db/pool";
 
 import authRoutes from "./routes/auth";
 import emailRoutes from "./routes/emails";
 import slackRoutes from "./routes/slack";
 
 const app = express();
+app.set("trust proxy", 1); // behind the hosting provider's TLS proxy - needed for secure cookies
+
+// Built React SPA (frontend/dist). When present, the API serves it from the same origin.
+const frontendDist = path.resolve(__dirname, "../../frontend/dist");
+const serveFrontend = fs.existsSync(path.join(frontendDist, "index.html"));
 
 app.use(
   cors({
@@ -42,7 +50,8 @@ app.use("/admin/queues", serverAdapter.getRouter());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-app.get("/", (_req, res) => {
+app.get("/", (_req, res, next) => {
+  if (serveFrontend) return next();
   res.send(`
     <!DOCTYPE html>
     <html lang="en">
@@ -91,7 +100,29 @@ app.use("/api/auth", authRoutes);
 app.use("/api/emails", emailRoutes);
 app.use("/api/slack", slackRoutes);
 
+if (serveFrontend) {
+  app.use(express.static(frontendDist));
+  // SPA fallback: any non-API GET renders index.html so client-side routes work on refresh.
+  app.get(/^\/(?!api\/|admin\/).*/, (_req, res) => res.sendFile(path.join(frontendDist, "index.html")));
+}
+
+async function applySchema() {
+  const schemaPath = [path.join(__dirname, "db/schema.sql"), path.resolve(__dirname, "../src/db/schema.sql")].find(
+    fs.existsSync
+  );
+  if (!schemaPath) return;
+  await pool.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto";');
+  await pool.query(fs.readFileSync(schemaPath, "utf-8"));
+  console.log("[db] schema applied");
+}
+
 async function main() {
+  await applySchema();
+
+  if (env.runWorkerInApi) {
+    await import("./queue/worker");
+  }
+
   await ensureIndex().catch(() => {
     console.log("[search] Elasticsearch offline (search index skipped, continuing with Postgres)");
   });
